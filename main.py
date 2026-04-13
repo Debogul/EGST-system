@@ -1,8 +1,8 @@
 import os
 from sqlalchemy import create_engine
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+DATABASE_URL = os.getenv("postgresql://postgres:[YOUR-PASSWORD]@db.afedtniqlemyvzgxymdd.supabase.co:5432/postgres")
+engine = create_engine(postgresql://postgres:[YOUR-PASSWORD]@db.afedtniqlemyvzgxymdd.supabase.co:5432/postgres)
 
 from sqlalchemy import text
 
@@ -47,6 +47,55 @@ def calculate_proficiency(skills):
     return int((current / max_score) * 100) if max_score else 0
 
 @app.post("/analyze")
+def analyze(data: dict):
+    skills = data["skills"]
+
+    # 1. SGI calculation
+    sgi = 0
+    for s in skills:
+        gap = (s["required_level"] - s["current_level"])
+        sgi += gap * s["weight"]
+
+    # 2. Proficiency calculation
+    max_score = 0
+    current_score = 0
+
+    for s in skills:
+        max_score += s["required_level"] * s["weight"]
+        current_score += min(s["current_level"], s["required_level"]) * s["weight"]
+
+    proficiency = int((current_score / max_score) * 100)
+
+    # 3. Status
+    if proficiency >= 85:
+        status = "EXCEEDING"
+    elif proficiency >= 50:
+        status = "DEVELOPING"
+    else:
+        status = "CRITICAL GAP"
+
+    # 4. SAVE TO SUPABASE (THIS IS THE FIX)
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO gap_results (profile_id, sgi, proficiency, status)
+            VALUES (:profile_id, :sgi, :proficiency, :status)
+        """), {
+            "profile_id": data.get("name", "unknown"),
+            "sgi": sgi,
+            "proficiency": proficiency,
+            "status": status
+        })
+        conn.commit()
+
+    # 5. RETURN RESULT
+    return {
+        "name": data.get("name"),
+        "sgi": sgi,
+        "proficiency": proficiency,
+        "status": status
+    }
 def analyze(employee: Employee):
     sgi = calculate_sgi(employee.skills)
     proficiency = calculate_proficiency(employee.skills)
