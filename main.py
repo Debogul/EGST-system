@@ -46,17 +46,22 @@ def calculate_proficiency(skills):
     current = sum(min(s.current_level, s.required_level) * s.weight for s in skills)
     return int((current / max_score) * 100) if max_score else 0
 
-@app.post("/analyze")
-def analyze(data: dict):
-    skills = data["skills"]
+from fastapi import Body
+from sqlalchemy import text
 
-    # 1. SGI calculation
+@app.post("/analyze")
+def analyze(data: dict = Body(...)):
+
+    skills = data.get("skills", [])
+
+    if not skills:
+        return {"error": "No skills provided"}
+
     sgi = 0
     for s in skills:
         gap = (s["required_level"] - s["current_level"])
         sgi += gap * s["weight"]
 
-    # 2. Proficiency calculation
     max_score = 0
     current_score = 0
 
@@ -66,7 +71,6 @@ def analyze(data: dict):
 
     proficiency = int((current_score / max_score) * 100)
 
-    # 3. Status
     if proficiency >= 85:
         status = "EXCEEDING"
     elif proficiency >= 50:
@@ -74,22 +78,22 @@ def analyze(data: dict):
     else:
         status = "CRITICAL GAP"
 
-    # 4. SAVE TO SUPABASE (THIS IS THE FIX)
-    from sqlalchemy import text
+    # SAVE TO SUPABASE
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO gap_results (profile_id, sgi, proficiency, status)
+                VALUES (:profile_id, :sgi, :proficiency, :status)
+            """), {
+                "profile_id": data.get("name", "unknown"),
+                "sgi": sgi,
+                "proficiency": proficiency,
+                "status": status
+            })
+            conn.commit()
+    except Exception as e:
+        print("DB ERROR:", e)
 
-    with engine.connect() as conn:
-        conn.execute(text("""
-            INSERT INTO gap_results (profile_id, sgi, proficiency, status)
-            VALUES (:profile_id, :sgi, :proficiency, :status)
-        """), {
-            "profile_id": data.get("name", "unknown"),
-            "sgi": sgi,
-            "proficiency": proficiency,
-            "status": status
-        })
-        conn.commit()
-
-    # 5. RETURN RESULT
     return {
         "name": data.get("name"),
         "sgi": sgi,
