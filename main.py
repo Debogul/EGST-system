@@ -4,6 +4,21 @@ from sqlalchemy import create_engine
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
+from sqlalchemy import text
+
+def save_gap_result(profile_id, sgi, proficiency, status):
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO gap_results (profile_id, sgi, proficiency, status)
+            VALUES (:profile_id, :sgi, :proficiency, :status)
+        """), {
+            "profile_id": profile_id,
+            "sgi": sgi,
+            "proficiency": proficiency,
+            "status": status
+        })
+        conn.commit()
+
 
 from fastapi import FastAPI
 from pydantic import BaseModel
