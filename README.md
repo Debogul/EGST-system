@@ -1,1 +1,1 @@
-# EGST-system
+# Frontend placeholder - connect your React app here
